@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { setImmediate as waitForImmediate } from "node:timers/promises";
+import { appendFile, copyFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { AgentStreamEvent } from "../../agent-sdk-types.js";
 import type { PaseoToolCatalog } from "../../tools/types.js";
@@ -16,6 +19,40 @@ const TURN_LIFECYCLE_EVENTS = new Set<AgentStreamEvent["type"]>([
   "turn_failed",
   "turn_canceled",
 ]);
+
+test("resumed OMP history reads the selected file after the runtime reports an older path", async () => {
+  const omp = new OmpHarness();
+  await omp.resume({
+    user: { id: "original-user", text: "Original CLI prompt" },
+    assistant: { id: "original-answer", text: "Original CLI answer" },
+  });
+  const selectedFile = omp.launchConfiguration().session;
+  if (!selectedFile) throw new Error("Expected an OMP persistence file");
+  const directory = await mkdtemp(join(tmpdir(), "paseo-omp-stale-runtime-"));
+  const staleFile = join(directory, "stale.jsonl");
+  try {
+    await copyFile(selectedFile, staleFile);
+    await appendFile(
+      selectedFile,
+      `\n${JSON.stringify({
+        type: "message",
+        id: "later-user",
+        parentId: "original-answer",
+        timestamp: "2026-09-29T00:00:00.000Z",
+        message: { role: "user", content: "CLI prompt added after archive" },
+      })}\n`,
+    );
+    omp.reportSessionFile(staleFile);
+
+    await expect(omp.history()).resolves.toContainEqual({
+      type: "user_message",
+      text: "CLI prompt added after archive",
+      messageId: "later-user",
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 function isTurnLifecycle(type: AgentStreamEvent["type"]): boolean {
   return TURN_LIFECYCLE_EVENTS.has(type);

@@ -179,6 +179,8 @@ interface OmpAgentSessionOptions {
   runtimeSession: OmpRuntimeSession;
   config: AgentSessionConfig;
   initialState: OmpSessionState;
+  /** The selected persistence file remains authoritative during a resumed history replay. */
+  historySessionFile?: string;
   currentModeId?: string | null;
   logger: Logger;
   subagentCardScheduler?: OmpSubagentCardScheduler;
@@ -901,6 +903,7 @@ export class OmpAgentSession implements AgentSession {
   private readonly subagentCardTracker: OmpSubagentCardTracker;
   private lastTodoItem: Extract<AgentTimelineItem, { type: "todo" }> | null = null;
   private state: OmpSessionState;
+  private historySessionFile: string | undefined;
   private readonly currentModeId: string | null;
   private readonly providerIdleScheduler: OmpProviderIdleScheduler;
   private readonly noTurnScheduler: OmpNoTurnScheduler;
@@ -913,6 +916,7 @@ export class OmpAgentSession implements AgentSession {
     this.runtimeSession = options.runtimeSession;
     this.config = options.config;
     this.state = options.initialState;
+    this.historySessionFile = options.historySessionFile;
     this.currentModeId = options.currentModeId ?? null;
     this.logger = options.logger;
     this.paseoTools = options.paseoTools;
@@ -988,6 +992,7 @@ export class OmpAgentSession implements AgentSession {
 
     const payload = convertPromptInput(prompt, { model: this.state.model });
     const turnId = randomUUID();
+    this.historySessionFile = undefined;
     this.live = true;
     this.activeTurnId = turnId;
     this.activeClientMessageId = options?.clientMessageId ?? null;
@@ -1061,7 +1066,7 @@ export class OmpAgentSession implements AgentSession {
 
   async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
     yield* streamOmpHistory({
-      sessionFile: this.state.sessionFile,
+      sessionFile: this.historySessionFile ?? this.state.sessionFile,
       runtimeSession: this.runtimeSession,
       provider: this.provider,
     });
@@ -1183,6 +1188,7 @@ export class OmpAgentSession implements AgentSession {
     }
     await this.runtimeSession.branch(target);
     await this.refreshState();
+    this.historySessionFile = undefined;
     this.activeToolCalls.clear();
   }
 
@@ -1239,6 +1245,7 @@ export class OmpAgentSession implements AgentSession {
     if (!parsed) {
       return null;
     }
+    this.historySessionFile = undefined;
     this.live = true;
     const commandName = parsed.commandName.toLowerCase();
     if (commandName === "compact") {
@@ -2339,6 +2346,7 @@ export class OmpAgentClient implements AgentClient {
         runtimeSession,
         config: resumeConfig.config,
         initialState: await runtimeSession.getState(),
+        historySessionFile: sessionFile,
         currentModeId: launchMode.modeId,
         logger: this.logger,
         subagentCardScheduler: this.subagentCardScheduler,

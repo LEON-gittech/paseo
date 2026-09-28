@@ -142,6 +142,10 @@ export class OmpHarness {
     };
   }
 
+  reportSessionFile(file: string): void {
+    this.omp.latestSession().state.sessionFile = file;
+  }
+
   registeredHostTools() {
     return this.omp.latestSession().hostToolSetRequests;
   }
