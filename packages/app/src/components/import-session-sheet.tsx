@@ -60,6 +60,8 @@ interface ImportSessionSheetProps {
   serverId: string | null;
   cwd?: string | null;
   workspaceId?: string | null;
+  /** Provider initially selected when opening the host-wide picker. */
+  preferredProviderId?: AgentProvider;
   onClose: () => void;
   /** The agent belongs to the workspace the sheet was opened from; open it here. */
   onImportedAgent?: (agentId: string) => void;
@@ -403,6 +405,7 @@ export function ImportSessionSheet({
   serverId,
   cwd,
   workspaceId,
+  preferredProviderId,
   onClose,
   onImportedAgent,
   onImported,
@@ -417,7 +420,9 @@ export function ImportSessionSheet({
   const [isShowingAllDirectories, setIsShowingAllDirectories] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [pageLimit, setPageLimit] = useState(PER_PROVIDER_LIMIT);
-  const [selectedProvider, setSelectedProvider] = useState<string>(ALL_FILTER_VALUE);
+  const [selectedProvider, setSelectedProvider] = useState<string>(
+    preferredProviderId ?? ALL_FILTER_VALUE,
+  );
 
   const scopeCwd = isShowingAllDirectories ? null : (cwd ?? null);
   const supportsSearch = useHostFeature(serverId, "importSessionSearch");
@@ -485,13 +490,16 @@ export function ImportSessionSheet({
   const filterAnchorRef = useRef<View>(null);
 
   useEffect(() => {
-    if (
-      !visible ||
-      (selectedProvider !== ALL_FILTER_VALUE && !filterProviders.includes(selectedProvider))
+    if (!visible) {
+      setSelectedProvider(preferredProviderId ?? ALL_FILTER_VALUE);
+    } else if (
+      providersToFetch !== null &&
+      selectedProvider !== ALL_FILTER_VALUE &&
+      !filterProviders.includes(selectedProvider)
     ) {
       setSelectedProvider(ALL_FILTER_VALUE);
     }
-  }, [visible, filterProviders, selectedProvider]);
+  }, [visible, filterProviders, preferredProviderId, providersToFetch, selectedProvider]);
 
   const visibleEntries = useMemo(() => {
     if (selectedProvider === ALL_FILTER_VALUE) return aggregatedEntries;
