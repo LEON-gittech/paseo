@@ -1879,6 +1879,7 @@ export const ar: TranslationResources = {
     output: "الإخراج",
   },
   toolCallGroup: {
+    thinking: "التفكير",
     editedFiles: {
       one: "حرّر {{count}} ملفًا",
       other: "حرّر {{count}} ملفات",
@@ -2065,7 +2066,7 @@ export const ar: TranslationResources = {
         description: "كيفية ظهور استدعاءات الأدوات في المخطط الزمني",
         options: {
           overview: "ملخص",
-          detailed: "التفاصيل الكاملة",
+          detailed: "تفاصيل الخطوات",
         },
       },
       language: {

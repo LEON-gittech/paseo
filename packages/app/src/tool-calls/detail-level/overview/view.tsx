@@ -1,10 +1,11 @@
 import React, { memo, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { ScrollView } from "react-native";
 import { useTranslation } from "react-i18next";
-import { Wrench } from "lucide-react-native";
+import { Brain, Search, SquareTerminal, Wrench } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { ExpandableBadge } from "@/components/message";
 import { useIsCompactFormFactor } from "@/constants/layout";
+import { describeToolCall, type ToolCallRun } from "../grouping";
 import { type OverviewSummary, type OverviewToolCallGroup } from "./model";
 import { OverviewToolCallGroupSheet } from "./sheet";
 
@@ -32,7 +33,7 @@ function joinSummaryParts(parts: string[], conjunction: string): string {
   return firstCharacter ? `${firstCharacter.toLocaleUpperCase()}${joined.slice(1)}` : joined;
 }
 
-function useOverviewSummary(summary: OverviewSummary): string {
+function useOverviewSummary(summary: OverviewSummary, hasThoughts: boolean): string {
   const { t } = useTranslation();
   return useMemo(() => {
     const parts: string[] = [];
@@ -49,8 +50,28 @@ function useOverviewSummary(summary: OverviewSummary): string {
         parts.push(t(`${key}.${count === 1 ? "one" : "other"}`, { count }));
       }
     }
-    return joinSummaryParts(parts, t("toolCallGroup.and"));
-  }, [summary, t]);
+    if (parts.length > 0) return joinSummaryParts(parts, t("toolCallGroup.and"));
+    return hasThoughts ? t("toolCallGroup.thinking") : "";
+  }, [hasThoughts, summary, t]);
+}
+
+function latestActivityPreview(run: ToolCallRun): string | undefined {
+  const latest = run.items.at(-1);
+  if (!latest || latest.kind !== "tool_call") return undefined;
+  const descriptor = describeToolCall(latest);
+  const detail = descriptor.detail;
+  let text: string | undefined = descriptor.name;
+  if (detail.type === "read") text = detail.filePath.split(/[/\\]/).at(-1);
+  else if (detail.type === "search") text = detail.query;
+  else if (detail.type === "shell") text = detail.command.split("\n")[0];
+  return text?.trim().slice(0, 96) || undefined;
+}
+
+function groupIcon(summary: OverviewSummary, hasThoughts: boolean) {
+  if (summary.editedFileCount > 0) return Wrench;
+  if (summary.commandCount > 0) return SquareTerminal;
+  if (summary.readFileCount > 0 || summary.searchCount > 0) return Search;
+  return hasThoughts ? Brain : Wrench;
 }
 
 export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView({
@@ -62,7 +83,11 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
 }: OverviewGroupProps) {
   const scrollRef = useRef<ScrollView>(null);
   const isCompact = useIsCompactFormFactor();
-  const aggregateSummary = useOverviewSummary(group.summary);
+  const hasThoughts = group.run.items.some((item) => item.kind === "thought");
+  const aggregateSummary = useOverviewSummary(group.summary, hasThoughts);
+  const isError = group.run.calls.some((call) => describeToolCall(call).status === "failed");
+  const icon = groupIcon(group.summary, hasThoughts);
+  const secondaryLabel = group.isLoading ? latestActivityPreview(group.run) : undefined;
   const scrollToLatest = useCallback(() => {
     scrollRef.current?.scrollToEnd({ animated: false });
   }, []);
@@ -76,7 +101,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
     () => (
       <ScrollView
         ref={scrollRef}
-        style={styles.scroll}
+        style={[styles.scroll, !group.run.isSealed && styles.activeScroll]}
         contentContainerStyle={styles.content}
         nestedScrollEnabled
         showsVerticalScrollIndicator
@@ -85,22 +110,29 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
         {children}
       </ScrollView>
     ),
-    [children, scrollToLatest],
+    [children, group.run.isSealed, scrollToLatest],
   );
 
   if (isCompact) {
     return (
       <>
         <ExpandableBadge
-          testID="tool-call-group"
+          testID={group.mode === "progressive" ? "activity-group" : "tool-call-group"}
           label={aggregateSummary}
-          icon={Wrench}
+          secondaryLabel={secondaryLabel}
+          icon={icon}
           isLoading={group.isLoading}
+          isError={isError}
           isExpanded={false}
           isLastInSequence={isLastInSequence}
           onToggle={toggle}
         />
-        <OverviewToolCallGroupSheet visible={expanded} summary={aggregateSummary} onClose={close}>
+        <OverviewToolCallGroupSheet
+          visible={expanded}
+          summary={aggregateSummary}
+          icon={icon}
+          onClose={close}
+        >
           {children}
         </OverviewToolCallGroupSheet>
       </>
@@ -109,10 +141,12 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
 
   return (
     <ExpandableBadge
-      testID="tool-call-group"
+      testID={group.mode === "progressive" ? "activity-group" : "tool-call-group"}
       label={aggregateSummary}
-      icon={Wrench}
+      secondaryLabel={secondaryLabel}
+      icon={icon}
       isLoading={group.isLoading}
+      isError={isError}
       isExpanded={expanded}
       isLastInSequence={isLastInSequence}
       onToggle={toggle}
@@ -125,6 +159,9 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
 const styles = StyleSheet.create((theme) => ({
   scroll: {
     maxHeight: TOOL_CALL_GROUP_MAX_HEIGHT,
+  },
+  activeScroll: {
+    maxHeight: 240,
   },
   content: {
     paddingTop: theme.spacing[1],

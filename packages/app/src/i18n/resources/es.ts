@@ -1927,6 +1927,7 @@ export const es: TranslationResources = {
     output: "Producción",
   },
   toolCallGroup: {
+    thinking: "Razonamiento",
     editedFiles: {
       one: "editó {{count}} archivo",
       other: "editó {{count}} archivos",
@@ -2117,7 +2118,7 @@ export const es: TranslationResources = {
         description: "Cómo aparecen las llamadas a herramientas en la cronología",
         options: {
           overview: "Resumen",
-          detailed: "Detalle completo",
+          detailed: "Detalles de los pasos",
         },
       },
       language: {

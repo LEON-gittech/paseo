@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import {
   BottomSheetBackdrop,
   BottomSheetScrollView,
   type BottomSheetScrollViewMethods,
 } from "@gorhom/bottom-sheet";
-import { Wrench, X } from "lucide-react-native";
+import { X, type LucideIcon } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { useIsolatedBottomSheetVisibility } from "@/components/ui/isolated-bottom-sheet-modal";
@@ -15,12 +15,12 @@ import type { Theme } from "@/styles/theme";
 interface OverviewToolCallGroupSheetProps {
   visible: boolean;
   summary: string;
+  icon: LucideIcon;
   children: ReactNode;
   onClose: () => void;
 }
 
 const SNAP_POINTS = ["60%", "95%"];
-const ThemedWrench = withUnistyles(Wrench);
 const ThemedX = withUnistyles(X);
 const foregroundMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const foregroundMutedMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
@@ -28,10 +28,12 @@ const foregroundMutedMapping = (theme: Theme) => ({ color: theme.colors.foregrou
 export function OverviewToolCallGroupSheet({
   visible,
   summary,
+  icon,
   children,
   onClose,
 }: OverviewToolCallGroupSheetProps) {
   const { t } = useTranslation();
+  const ThemedIcon = useMemo(() => withUnistyles(icon), [icon]);
   const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
   const contextBridge = useToolCallSheetContextBridge();
   const { sheetRef, handleSheetChange, handleSheetDismiss } = useIsolatedBottomSheetVisibility({
@@ -70,7 +72,7 @@ export function OverviewToolCallGroupSheet({
       <View style={styles.container} testID="tool-call-group-sheet">
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <ThemedWrench size={20} uniProps={foregroundMapping} />
+            <ThemedIcon size={20} uniProps={foregroundMapping} />
             <Text
               style={styles.headerTitle}
               numberOfLines={2}

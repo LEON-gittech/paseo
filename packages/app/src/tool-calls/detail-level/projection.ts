@@ -2,7 +2,10 @@ import type { StreamItem } from "@/types/stream";
 import type { ToolCallDetailLevel } from "@/hooks/use-settings/storage";
 import {
   groupLiveToolCalls,
+  isExplorationToolCall,
+  isGroupableToolCall,
   prepareGroupedHistory,
+  type ActivityItem,
   type GroupedHistory,
   type GroupedToolCalls,
 } from "./grouping";
@@ -12,13 +15,11 @@ export type { ToolCallDetailLevel } from "@/hooks/use-settings/storage";
 export type ToolCallDetailGroup = OverviewToolCallGroup;
 
 export interface PreparedToolCallHistory {
-  mode: "overview";
+  mode: ToolCallDetailLevel;
   grouped: GroupedHistory<ToolCallDetailGroup>;
 }
 
 export interface ToolCallDetailProjection extends GroupedToolCalls<ToolCallDetailGroup> {}
-
-const EMPTY_TOOL_CALL_GROUPS = new Map<string, ToolCallDetailGroup>();
 
 // Approval UI owns pending plan presentation. Retain the canonical tool in the
 // stream model so resolving it can reveal a card at its original position.
@@ -41,15 +42,19 @@ function visibleToolCallItems(items: StreamItem[]): StreamItem[] {
 export function prepareToolCallHistory(
   level: ToolCallDetailLevel,
   tail: StreamItem[],
-): PreparedToolCallHistory | null {
-  if (level === "detailed") {
-    return null;
-  }
+  groupReasoning = true,
+): PreparedToolCallHistory {
+  const isGroupable = (item: StreamItem): item is ActivityItem =>
+    (groupReasoning && item.kind === "thought") ||
+    (level === "overview" ? isGroupableToolCall(item) : isExplorationToolCall(item));
   return {
-    mode: "overview",
+    mode: level,
     grouped: prepareGroupedHistory({
       tail: visibleToolCallItems(tail),
-      buildGroup: buildOverviewGroup,
+      buildGroup: (run) =>
+        buildOverviewGroup(run, level === "overview" ? "overview" : "progressive"),
+      isGroupable,
+      minItems: level === "overview" ? 1 : 2,
     }),
   };
 }
@@ -60,22 +65,21 @@ export function projectToolCallDetailLevel(input: {
   head: StreamItem[];
   preparedHistory: PreparedToolCallHistory | null;
   isTurnActive: boolean;
+  groupReasoning?: boolean;
 }): ToolCallDetailProjection {
-  if (input.level === "detailed") {
-    return {
-      tail: visibleToolCallItems(input.tail),
-      head: visibleToolCallItems(input.head),
-      groupsByHostId: EMPTY_TOOL_CALL_GROUPS,
-      historyGroupUpdatesByHostId: EMPTY_TOOL_CALL_GROUPS,
-    };
-  }
   if (!input.preparedHistory || input.preparedHistory.mode !== input.level) {
     throw new Error(`Missing prepared ${input.level} tool call history`);
   }
+  const isGroupable = (item: StreamItem): item is ActivityItem =>
+    (input.groupReasoning !== false && item.kind === "thought") ||
+    (input.level === "overview" ? isGroupableToolCall(item) : isExplorationToolCall(item));
   return groupLiveToolCalls({
     history: input.preparedHistory.grouped,
     head: visibleToolCallItems(input.head),
     isTurnActive: input.isTurnActive,
-    buildGroup: buildOverviewGroup,
+    buildGroup: (run) =>
+      buildOverviewGroup(run, input.level === "overview" ? "overview" : "progressive"),
+    isGroupable,
+    minItems: input.level === "overview" ? 1 : 2,
   });
 }

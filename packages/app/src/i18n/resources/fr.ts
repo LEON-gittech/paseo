@@ -1932,6 +1932,7 @@ export const fr: TranslationResources = {
     output: "Sortir",
   },
   toolCallGroup: {
+    thinking: "Réflexion",
     editedFiles: {
       one: "a modifié {{count}} fichier",
       other: "a modifié {{count}} fichiers",
@@ -2120,7 +2121,7 @@ export const fr: TranslationResources = {
         description: "Comment les appels d’outils apparaissent dans la chronologie",
         options: {
           overview: "Résumé",
-          detailed: "Détails complets",
+          detailed: "Détails des étapes",
         },
       },
       language: {

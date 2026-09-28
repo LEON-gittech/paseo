@@ -14,7 +14,7 @@ export interface OverviewSummary {
 }
 
 export interface OverviewToolCallGroup {
-  mode: "overview";
+  mode: "overview" | "progressive";
   run: ToolCallRun;
   summary: OverviewSummary;
   isLoading: boolean;
@@ -28,10 +28,13 @@ function isSearchCall(name: string): boolean {
   return DIRECT_SEARCH_TOOL_SUFFIX_PATTERN.test(name);
 }
 
-export function buildOverviewGroup(run: ToolCallRun): OverviewToolCallGroup {
+export function buildOverviewGroup(
+  run: ToolCallRun,
+  mode: OverviewToolCallGroup["mode"] = "overview",
+): OverviewToolCallGroup {
   const editedFiles = new Set<string>();
   const readFiles = new Set<string>();
-  let isLoading = false;
+  let isLoading = run.items.some((item) => item.kind === "thought" && item.status === "loading");
   let commandCount = 0;
   let searchCount = 0;
   let otherToolCount = 0;
@@ -65,7 +68,7 @@ export function buildOverviewGroup(run: ToolCallRun): OverviewToolCallGroup {
     paseoCallCount,
   };
   return {
-    mode: "overview",
+    mode,
     run,
     isLoading,
     summary,

@@ -1899,6 +1899,7 @@ export const ja: TranslationResources = {
     output: "出力",
   },
   toolCallGroup: {
+    thinking: "思考過程",
     editedFiles: {
       one: "{{count}}個のファイルを編集",
       other: "{{count}}個のファイルを編集",
@@ -2084,7 +2085,7 @@ export const ja: TranslationResources = {
         description: "タイムラインでのツール呼び出しの表示方法",
         options: {
           overview: "要約",
-          detailed: "すべての詳細",
+          detailed: "各手順の詳細",
         },
       },
       language: {

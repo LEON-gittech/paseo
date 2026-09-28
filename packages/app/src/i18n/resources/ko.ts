@@ -1889,6 +1889,7 @@ export const ko: TranslationResources = {
     output: "출력",
   },
   toolCallGroup: {
+    thinking: "사고 과정",
     editedFiles: {
       one: "{{count}} 파일을 편집했습니다.",
       other: "{{count}} 파일을 편집했습니다.",
@@ -2076,7 +2077,7 @@ export const ko: TranslationResources = {
         description: "타임라인에 도구 호출이 표시되는 방식",
         options: {
           overview: "요약",
-          detailed: "전체 세부정보",
+          detailed: "단계별 세부 정보",
         },
       },
       language: {
