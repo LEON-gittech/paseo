@@ -4559,7 +4559,12 @@ export class Session {
           logger: this.sessionLogger,
         });
       }
-      await this.agentManager.hydrateTimelineFromProvider(agentId, { broadcast: true });
+      if (snapshot.provider === "omp") {
+        await this.agentManager.replaceTimelineFromProvider(agentId);
+        snapshot = this.agentManager.getAgent(agentId) ?? snapshot;
+      } else {
+        await this.agentManager.hydrateTimelineFromProvider(agentId, { broadcast: true });
+      }
       await this.agentUpdates.forwardLiveAgent(snapshot);
       const timelineSize = this.agentManager.getTimeline(agentId).length;
       if (requestId) {

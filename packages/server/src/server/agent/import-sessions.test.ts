@@ -616,6 +616,8 @@ class ProviderImportHarness {
   readonly freshImports: unknown[] = [];
   readonly closedAgentIds: string[] = [];
   timeline: AgentTimelineItem[] = [];
+  replacementTimeline: AgentTimelineItem[] | null = null;
+  replacementAttempts = 0;
   activeAgent: ManagedAgent | null = null;
   resumeError: Error | null = null;
   resumeAttempts = 0;
@@ -679,6 +681,10 @@ class ProviderImportHarness {
         return this.snapshot;
       },
       hydrateTimelineFromProvider: async () => {},
+      replaceTimelineFromProvider: async () => {
+        this.replacementAttempts += 1;
+        if (this.replacementTimeline) this.timeline = this.replacementTimeline;
+      },
       getTimeline: () => this.timeline,
       closeAgent: async (agentId: string) => {
         this.closedAgentIds.push(agentId);
@@ -830,7 +836,36 @@ test("importProviderSession restores an archived session as the same standalone 
     PARENT_AGENT_ID_LABEL,
   );
   expect(harness.resumeAttempts).toBe(1);
+  expect(harness.replacementAttempts).toBe(1);
   expect(harness.freshImports).toEqual([]);
+});
+
+test("importProviderSession replaces stale history after restoring an archived session", async () => {
+  const harness = await ProviderImportHarness.create({ sessionId: "thread-with-cli-updates" });
+  harness.timeline = [{ type: "user_message", text: "before archive" }];
+  harness.replacementTimeline = [
+    { type: "user_message", text: "before archive" },
+    { type: "user_message", text: "added in the CLI after archive" },
+  ];
+  await harness.seed(
+    makeStoredProviderSession({
+      id: harness.snapshot.id,
+      cwd: harness.snapshot.cwd,
+      sessionId: "thread-with-cli-updates",
+    }),
+  );
+
+  const result = await harness.import({
+    providerHandleId: "thread-with-cli-updates",
+    cwd: harness.snapshot.cwd,
+  });
+
+  expect(result.timelineSize).toBe(2);
+  expect(harness.replacementAttempts).toBe(1);
+  expect(harness.timeline.at(-1)).toEqual({
+    type: "user_message",
+    text: "added in the CLI after archive",
+  });
 });
 
 test("importProviderSession rejects an archived session from a different cwd before restoring", async () => {

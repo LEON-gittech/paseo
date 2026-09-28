@@ -34,6 +34,7 @@ export type ImportSessionAgentManager = AgentLoaderManager &
     | "getTimeline"
     | "importProviderSession"
     | "notifyAgentState"
+    | "replaceTimelineFromProvider"
     | "unarchiveSnapshot"
   >;
 
@@ -237,8 +238,9 @@ async function importProviderSessionNow(
         agentStorage: input.agentStorage,
         logger: input.logger,
       });
+      await input.agentManager.replaceTimelineFromProvider(snapshot.id);
       return {
-        snapshot,
+        snapshot: input.agentManager.getAgent(snapshot.id) ?? snapshot,
         timelineSize: input.agentManager.getTimeline(snapshot.id).length,
       };
     } catch (error) {

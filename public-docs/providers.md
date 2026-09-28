@@ -27,6 +27,8 @@ Type `/resume` in a chat or new-workspace composer to open the selected host's i
 
 The same picker is available from **Import session** in the sidebar. The provider must support session import; search by title, prompt, or directory to narrow a long list.
 
+An archived imported session can be imported again; Paseo rebuilds its transcript from the provider's current session file. If the terminal session continues after it is already open in Paseo, choose **Reload agent** from the agent tab menu to read the new content.
+
 ## Where to go next
 
 - [Supported providers](/docs/supported-providers), the full list with install links.

@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "../support/fixtures";
@@ -14,6 +14,7 @@ import {
 import { createTempDirectory, type TempDirectory } from "../support/helpers/workspace";
 import {
   createAgentTabFromMenu,
+  getVisibleWorkspaceAgentTabIds,
   waitForWorkspaceTabsVisible,
 } from "../support/helpers/workspace-tabs";
 import { buildHostWorkspaceRoute } from "@/utils/host-routes";
@@ -52,18 +53,21 @@ test.beforeAll(async ({ e2eWorkerClient }) => {
         type: "session",
         version: 3,
         id: sessionId,
+        parentId: null,
         timestamp: "2026-09-28T10:00:00.000Z",
         cwd: directory.path,
       },
       {
         type: "title",
         id: `${sessionId}-title`,
+        parentId: sessionId,
         timestamp: "2026-09-28T10:00:01.000Z",
         title,
       },
       {
         type: "message",
         id: `${sessionId}-user`,
+        parentId: `${sessionId}-title`,
         timestamp: "2026-09-28T10:00:02.000Z",
         message: { role: "user", content: [{ type: "text", text: prompt }] },
       },
@@ -78,8 +82,9 @@ test.afterAll(async () => {
   await rm(sessionDir, { recursive: true, force: true });
 });
 
-test("/resume gives an OMP CLI session a separate sidebar workspace", async ({
+test("/resume gives an OMP CLI session a sidebar workspace and refreshes reimports", async ({
   page,
+  e2eWorkerClient,
 }, testInfo) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(buildHostWorkspaceRoute(getServerId(), initialWorkspaceId));
@@ -107,10 +112,60 @@ test("/resume gives an OMP CLI session a separate sidebar workspace", async ({
     page.getByTestId(`sidebar-workspace-row-${getServerId()}:${initialWorkspaceId}`),
   ).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("resume-omp-sidebar.png") });
+  const [agentTabId] = await getVisibleWorkspaceAgentTabIds(page);
+  if (!agentTabId) throw new Error("Imported OMP agent tab is missing");
+  const agentId = agentTabId.slice("workspace-tab-agent_".length);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await openMobileAgentSidebar(page);
   await expectMobileAgentSidebarVisible(page);
   await expect(sidebarEntry).toBeInViewport();
   await page.screenshot({ path: testInfo.outputPath("resume-omp-mobile-sidebar.png") });
+
+  await e2eWorkerClient.archiveAgent(agentId);
+  const laterPrompt = "This OMP turn was added after archiving";
+  await appendFile(
+    sessionFile,
+    `${JSON.stringify({
+      type: "message",
+      id: `${sessionId}-later-user`,
+      parentId: `${sessionId}-user`,
+      timestamp: new Date().toISOString(),
+      message: { role: "user", content: [{ type: "text", text: laterPrompt }] },
+    })}\n`,
+  );
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(buildHostWorkspaceRoute(getServerId(), initialWorkspaceId));
+  await waitForWorkspaceTabsVisible(page);
+  await createAgentTabFromMenu(page);
+  const nextComposer = composerLocator(page);
+  await nextComposer.fill("/resume");
+  await nextComposer.press("Enter");
+  await expect(sheet).toBeVisible();
+  await sheet.getByTestId("import-session-filter-trigger").click();
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(session).toBeVisible({ timeout: 30_000 });
+  await session.click();
+
+  await expect(sheet).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByTestId("user-message").filter({ hasText: laterPrompt })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  const refreshedPrompt = "This OMP turn was added before reloading";
+  await appendFile(
+    sessionFile,
+    `${JSON.stringify({
+      type: "message",
+      id: `${sessionId}-refreshed-user`,
+      parentId: `${sessionId}-later-user`,
+      timestamp: new Date().toISOString(),
+      message: { role: "user", content: [{ type: "text", text: refreshedPrompt }] },
+    })}\n`,
+  );
+  await e2eWorkerClient.refreshAgent(agentId);
+  await expect(page.getByTestId("user-message").filter({ hasText: refreshedPrompt })).toBeVisible({
+    timeout: 30_000,
+  });
 });
