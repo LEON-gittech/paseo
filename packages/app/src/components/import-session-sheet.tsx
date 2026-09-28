@@ -62,6 +62,8 @@ interface ImportSessionSheetProps {
   workspaceId?: string | null;
   /** Provider initially selected when opening the host-wide picker. */
   preferredProviderId?: AgentProvider;
+  /** Override import placement while preserving the shared session picker. */
+  importSession?: (entry: FetchRecentProviderSessionEntry) => Promise<ImportedAgent>;
   onClose: () => void;
   /** The agent belongs to the workspace the sheet was opened from; open it here. */
   onImportedAgent?: (agentId: string) => void;
@@ -406,6 +408,7 @@ export function ImportSessionSheet({
   cwd,
   workspaceId,
   preferredProviderId,
+  importSession,
   onClose,
   onImportedAgent,
   onImported,
@@ -602,6 +605,9 @@ export function ImportSessionSheet({
       if (!entry.cwd) {
         throw new Error("Session is missing a working directory");
       }
+      if (importSession) {
+        return { agent: await importSession(entry), target: { crossWorkspace: true } };
+      }
       const target = resolveImportTarget({
         entryCwd: entry.cwd,
         workspaceCwd: cwd,
@@ -627,6 +633,9 @@ export function ImportSessionSheet({
         queryKey: sessionsQueryRoot,
         refetchType: "none",
       });
+    },
+    onError: (error) => {
+      console.error("Could not import selected session", error);
     },
   });
 
