@@ -1911,6 +1911,7 @@ export const ptBR: TranslationResources = {
     output: "Saída",
   },
   toolCallGroup: {
+    thinking: "Raciocínio",
     editedFiles: {
       one: "editou {{count}} arquivo",
       other: "editou {{count}} arquivos",
@@ -2099,7 +2100,7 @@ export const ptBR: TranslationResources = {
         description: "Como as chamadas de ferramentas aparecem na linha do tempo",
         options: {
           overview: "Resumo",
-          detailed: "Detalhes completos",
+          detailed: "Detalhes das etapas",
         },
       },
       language: {

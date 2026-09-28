@@ -1857,6 +1857,7 @@ export const zhCN: TranslationResources = {
     output: "输出",
   },
   toolCallGroup: {
+    thinking: "思考过程",
     editedFiles: {
       one: "编辑了 {{count}} 个文件",
       other: "编辑了 {{count}} 个文件",
@@ -2040,7 +2041,7 @@ export const zhCN: TranslationResources = {
         description: "工具调用在时间线中的显示方式",
         options: {
           overview: "摘要",
-          detailed: "完整详情",
+          detailed: "步骤详情",
         },
       },
       language: {

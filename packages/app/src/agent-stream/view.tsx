@@ -370,6 +370,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const [expandedToolCallGroupIds, setExpandedToolCallGroupIds] = useState<Set<string>>(
       new Set(),
     );
+    const [collapsedToolCallGroupIds, setCollapsedToolCallGroupIds] = useState<Set<string>>(
+      new Set(),
+    );
 
     // Get serverId (fallback to agent's serverId if not provided)
     const resolvedServerId = serverId ?? context.serverId ?? "";
@@ -434,6 +437,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       setIsNearBottom(true);
       setExpandedInlineToolCallIds(new Set());
       setExpandedToolCallGroupIds(new Set());
+      setCollapsedToolCallGroupIds(new Set());
     }, [agentId]);
 
     const handleInlinePathPress = useStableEvent(
@@ -543,6 +547,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           transform: transformTimelineItem,
           level: toolCallDetailLevel,
           isTurnActive,
+          groupReasoning: !autoExpandReasoning,
         }),
       [
         presentStream,
@@ -550,6 +555,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         effectiveStreamHead,
         transformTimelineItem,
         toolCallDetailLevel,
+        autoExpandReasoning,
         isTurnActive,
       ],
     );
@@ -682,6 +688,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           next.add(groupId);
         } else {
           next.delete(groupId);
+        }
+        return next;
+      });
+      setCollapsedToolCallGroupIds((previous) => {
+        const next = new Set(previous);
+        if (expanded) {
+          next.delete(groupId);
+        } else {
+          next.add(groupId);
         }
         return next;
       });
@@ -821,13 +836,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const getToolCallGroup = useStableEvent((hostId: string) =>
       presentation.groupsByHostId.get(hostId),
     );
-    const renderToolCallItem = useCallback(
-      (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "tool_call" }>) => {
-        const group = getToolCallGroup(item.id);
-        if (!group) {
-          return renderSingleToolCallItem(item, layoutItem.isLastInToolSequence);
-        }
-        const expanded = expandedToolCallGroupIds.has(group.run.id);
+    const renderActivityGroup = useCallback(
+      (layoutItem: StreamLayoutItem) => {
+        const group = getToolCallGroup(layoutItem.item.id);
+        if (!group) return null;
+        const expanded =
+          expandedToolCallGroupIds.has(group.run.id) ||
+          (!isMobile && !collapsedToolCallGroupIds.has(group.run.id) && !group.run.isSealed);
         return (
           <OverviewToolCallGroupView
             group={group}
@@ -836,12 +851,23 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             onExpandedChange={setToolCallGroupExpanded}
           >
             {expanded
-              ? group.run.calls.map((call, index) => (
-                  <React.Fragment key={call.id}>
-                    {renderSingleToolCallItem(
-                      call,
-                      index === group.run.calls.length - 1,
-                      GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT,
+              ? group.run.items.map((activity, index) => (
+                  <React.Fragment key={activity.id}>
+                    {activity.kind === "thought" ? (
+                      <ThoughtSlot
+                        itemId={activity.id}
+                        onInlineDetailsExpandedChangeByItemId={setInlineDetailsExpanded}
+                        text={activity.text}
+                        status={activity.status}
+                        isLastInSequence={index === group.run.items.length - 1}
+                        defaultExpanded={autoExpandReasoning}
+                      />
+                    ) : (
+                      renderSingleToolCallItem(
+                        activity,
+                        index === group.run.items.length - 1,
+                        GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT,
+                      )
                     )}
                   </React.Fragment>
                 ))
@@ -850,9 +876,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         );
       },
       [
+        autoExpandReasoning,
+        collapsedToolCallGroupIds,
         expandedToolCallGroupIds,
         getToolCallGroup,
+        isMobile,
         renderSingleToolCallItem,
+        setInlineDetailsExpanded,
         setToolCallGroupExpanded,
       ],
     );
@@ -860,6 +890,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const renderStreamItemContent = useCallback(
       (layoutItem: StreamLayoutItem) => {
         const item = layoutItem.item;
+        const activityGroup = renderActivityGroup(layoutItem);
+        if (activityGroup) return activityGroup;
         switch (item.kind) {
           case "user_message":
             return renderUserMessageItem(layoutItem, item);
@@ -871,7 +903,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             return renderThoughtItem(layoutItem, item);
 
           case "tool_call":
-            return renderToolCallItem(layoutItem, item);
+            return renderSingleToolCallItem(item, layoutItem.isLastInToolSequence);
 
           case "notification":
             return <Notification level={item.level} message={item.message} />;
@@ -902,7 +934,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         renderUserMessageItem,
         renderAssistantMessageItem,
         renderThoughtItem,
-        renderToolCallItem,
+        renderActivityGroup,
+        renderSingleToolCallItem,
         resolvedServerId,
       ],
     );
@@ -1082,13 +1115,17 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const streamScrollEnabled =
       !streamRenderStrategy.shouldDisableParentScrollOnInlineDetailsExpansion() ||
       expandedInlineToolCallIds.size === 0;
+    const revisedGroupIds = useMemo(
+      () => new Set([...expandedToolCallGroupIds, ...collapsedToolCallGroupIds]),
+      [collapsedToolCallGroupIds, expandedToolCallGroupIds],
+    );
     const historyRowRevision = useMemo(
       () => ({
         contentById: presentation.historyGroupUpdatesByHostId,
-        displayStateById: expandedToolCallGroupIds,
+        displayStateById: revisedGroupIds,
         globalDisplayState: isMobile,
       }),
-      [expandedToolCallGroupIds, isMobile, presentation.historyGroupUpdatesByHostId],
+      [isMobile, presentation.historyGroupUpdatesByHostId, revisedGroupIds],
     );
 
     const findItems = useMemo(
@@ -1112,7 +1149,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                 agentId,
                 segments: renderModel.segments,
                 historyRowRevision,
-                liveHeadRowRevision: expandedToolCallGroupIds,
+                liveHeadRowRevision: revisedGroupIds,
                 boundary,
                 renderers,
                 listEmptyComponent,

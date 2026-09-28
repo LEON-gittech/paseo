@@ -10,6 +10,16 @@ import {
 
 type AssistantMessageItem = Extract<StreamItem, { kind: "assistant_message" }>;
 
+function thought(id: string, status: "loading" | "ready" = "ready"): StreamItem {
+  return {
+    kind: "thought",
+    id,
+    text: `Reasoning ${id}`,
+    status,
+    timestamp: new Date(`2026-01-01T00:00:${id.padStart(2, "0")}.000Z`),
+  };
+}
+
 function toolCall(
   id: string,
   detail: ToolCallDetail,
@@ -51,14 +61,18 @@ function project(input: {
   head?: StreamItem[];
   isTurnActive?: boolean;
   preparedHistory?: PreparedToolCallHistory | null;
+  groupReasoning?: boolean;
 }) {
   const tail = input.tail ?? [];
   return projectToolCallDetailLevel({
     level: input.level,
     tail,
     head: input.head ?? [],
-    preparedHistory: input.preparedHistory ?? prepareToolCallHistory(input.level, tail),
+    preparedHistory:
+      input.preparedHistory ??
+      prepareToolCallHistory(input.level, tail, input.groupReasoning !== false),
     isTurnActive: input.isTurnActive ?? false,
+    groupReasoning: input.groupReasoning,
   });
 }
 
@@ -85,17 +99,105 @@ describe("tool call detail-level projection", () => {
     },
   );
 
-  it("passes detailed timelines through without grouping work", () => {
+  it("keeps isolated detailed activity as its original row", () => {
     const tail = [toolCall("1", { type: "shell", command: "one" })];
-    const head = [toolCall("2", { type: "shell", command: "two" })];
+    const head: StreamItem[] = [];
 
     const prepared = prepareToolCallHistory("detailed", tail);
     const result = project({ level: "detailed", tail, head, preparedHistory: prepared });
 
-    expect(prepared).toBeNull();
+    expect(prepared.mode).toBe("detailed");
     expect(result.tail).toBe(tail);
     expect(result.head).toBe(head);
     expect(result.groupsByHostId.size).toBe(0);
+  });
+
+  it("folds interleaved thinking and exploratory calls while leaving edits visible", () => {
+    const reasoning = thought("1");
+    const read = toolCall("2", { type: "read", filePath: "/repo/src/a.ts" });
+    const shell = toolCall("3", { type: "shell", command: "npm test" });
+    const edit = toolCall("4", { type: "edit", filePath: "/repo/src/a.ts" });
+
+    const result = project({ level: "detailed", tail: [reasoning, read, shell, edit] });
+
+    expect(result.tail.map((item) => item.id)).toEqual([reasoning.id, edit.id]);
+    expect(result.groupsByHostId.get(reasoning.id)).toMatchObject({
+      mode: "progressive",
+      run: { id: reasoning.id, items: [reasoning, read, shell], calls: [read, shell] },
+      summary: { readFileCount: 1, commandCount: 1, editedFileCount: 0 },
+    });
+    expect(result.groupsByHostId.has(edit.id)).toBe(false);
+  });
+
+  it("retains thinking between overview calls in expanded chronological order", () => {
+    const read = toolCall("1", { type: "read", filePath: "/repo/a.ts" });
+    const reasoning = thought("2");
+    const shell = toolCall("3", { type: "shell", command: "npm test" });
+    const answer = assistant("answer");
+
+    const result = project({ level: "overview", tail: [read, reasoning, shell, answer] });
+
+    expect(result.tail.map((item) => item.id)).toEqual([read.id, answer.id]);
+    expect(result.groupsByHostId.get(read.id)?.run.items).toEqual([read, reasoning, shell]);
+    expect(result.groupsByHostId.get(read.id)?.summary).toMatchObject({
+      readFileCount: 1,
+      commandCount: 1,
+    });
+  });
+
+  it("keeps reasoning separate when the user always expands it", () => {
+    const reasoning = thought("1");
+    const read = toolCall("2", { type: "read", filePath: "/repo/a.ts" });
+    const shell = toolCall("3", { type: "shell", command: "npm test" });
+
+    const result = project({
+      level: "detailed",
+      tail: [reasoning, read, shell],
+      groupReasoning: false,
+    });
+
+    expect(result.tail.map((item) => item.id)).toEqual([reasoning.id, read.id]);
+    expect(result.groupsByHostId.has(reasoning.id)).toBe(false);
+    expect(result.groupsByHostId.get(read.id)?.run.items).toEqual([read, shell]);
+  });
+
+  it("updates a historical thinking host when a live exploratory call joins it", () => {
+    const reasoning = thought("1", "loading");
+    const shell = toolCall("2", { type: "shell", command: "npm test" }, { status: "running" });
+    const tail = [reasoning];
+    const result = project({ level: "detailed", tail, head: [shell], isTurnActive: true });
+
+    expect(result.tail).toBe(tail);
+    expect(result.head).toEqual([]);
+    expect(result.historyGroupUpdatesByHostId.has(reasoning.id)).toBe(true);
+    expect(result.groupsByHostId.get(reasoning.id)?.run.items).toEqual([reasoning, shell]);
+    expect(result.groupsByHostId.get(reasoning.id)?.isLoading).toBe(true);
+  });
+
+  it("keeps distinct canonical turns in separate progressive groups", () => {
+    const first = { ...thought("1"), turnId: "turn-a" };
+    const second = { ...toolCall("2", { type: "shell", command: "one" }), turnId: "turn-a" };
+    const third = { ...thought("3"), turnId: "turn-b" };
+    const fourth = { ...toolCall("4", { type: "read", filePath: "/repo/b.ts" }), turnId: "turn-b" };
+
+    const result = project({ level: "detailed", tail: [first, second, third, fourth] });
+
+    expect(result.tail.map((item) => item.id)).toEqual([first.id, third.id]);
+    expect(result.groupsByHostId.get(first.id)?.run.items).toEqual([first, second]);
+    expect(result.groupsByHostId.get(third.id)?.run.items).toEqual([third, fourth]);
+  });
+
+  it("keeps image reads visible between overview tool call groups", () => {
+    const before = toolCall("1", { type: "read", filePath: "/repo/notes.md" });
+    const image = toolCall("2", { type: "read", filePath: "/repo/figure.PNG" });
+    const after = toolCall("3", { type: "shell", command: "echo done" });
+
+    const result = project({ level: "overview", tail: [before, image, after] });
+
+    expect(result.tail).toEqual([before, image, after]);
+    expect(result.groupsByHostId.has(image.id)).toBe(false);
+    expect(result.groupsByHostId.has(before.id)).toBe(true);
+    expect(result.groupsByHostId.has(after.id)).toBe(true);
   });
 
   it("keeps one stable overview host as a run grows", () => {

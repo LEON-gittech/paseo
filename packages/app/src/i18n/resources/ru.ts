@@ -1911,6 +1911,7 @@ export const ru: TranslationResources = {
     output: "Выходные данные",
   },
   toolCallGroup: {
+    thinking: "Размышление",
     editedFiles: {
       one: "изменён {{count}} файл",
       other: "изменены файлы ({{count}})",
@@ -2100,7 +2101,7 @@ export const ru: TranslationResources = {
         description: "Как вызовы инструментов отображаются на временной шкале",
         options: {
           overview: "Сводка",
-          detailed: "Все подробности",
+          detailed: "Детали шагов",
         },
       },
       language: {
